@@ -5,6 +5,7 @@ from Guidelet import GuideletLoadable, GuideletLogic, GuideletTest, GuideletWidg
 from Guidelet import Guidelet
 import logging
 import time
+import numpy as np
 
 
 class UsNeedleGuide(GuideletLoadable):
@@ -32,7 +33,6 @@ class UsNeedleGuideWidget(GuideletWidget):
   def setup(self):
     GuideletWidget.setup(self)
     self.guideletLogic = self.createGuideletLogic()
-
 
   def addLauncherWidgets(self):
     GuideletWidget.addLauncherWidgets(self)
@@ -75,7 +75,7 @@ class UsNeedleGuideLogic(GuideletLogic):
     moduleDirectoryPath = slicer.modules.usneedleguide.path.replace('UsNeedleGuide.py','')
     settingList = {
                    'StyleSheet' : moduleDirectoryPath + 'Resources/StyleSheets/UsNeedleGuideStyle.qss',
-                   'LiveUltrasoundNodeName': 'Image_Reference',
+                   'LiveUltrasoundNodeName': 'Image_Image',
                    'TestMode' : 'False',
                    'RecordingFilenamePrefix' : 'UsNeedleGuideRec-',
                    'SavedScenesDirectory': defaultSceneSavePath, #overwrites the default setting param of base
@@ -95,7 +95,18 @@ class UsNeedleGuideTest(GuideletTest):
 
 
 class UsNeedleGuideGuidelet(Guidelet):
+  
+  GUIDECOLORS = np.array([
+    [0.0, 1.0, 0.0],
+    [0.0, 0.7, 0.3],
+    [0.0, 0.3, 0.7],
+    [0,0, 0.0, 1.0]
+  ], dtype=object)
 
+  PROBEMODEL_TO_IMAGE_FILENAME = "ProbeModelToImage.h5"
+  PROBEMODEL_TO_IMAGE = "ProbeModelToImage"
+  
+  
   def __init__(self, parent, logic, configurationName='Default'):
     self.calibrationCollapsibleButton = None
 
@@ -109,7 +120,7 @@ class UsNeedleGuideGuidelet(Guidelet):
     # Set up main frame.
 
     self.sliceletDockWidget.setObjectName('UsNeedleGuidePanel')
-    self.sliceletDockWidget.setWindowTitle('Example guidelet')
+    self.sliceletDockWidget.setWindowTitle('Ultrasound needle guide')
     self.mainWindow.setWindowTitle('UsNeedleGuide')
     self.mainWindow.windowIcon = qt.QIcon(moduleDirectoryPath + '/Resources/Icons/UsNeedleGuide.png')
 
@@ -118,7 +129,10 @@ class UsNeedleGuideGuidelet(Guidelet):
     self.navigationView = self.VIEW_ULTRASOUND_3D
 
     # Setting button open on startup.
-    self.calibrationCollapsibleButton.setProperty('collapsed', False)
+    
+    self.calibrationCollapsibleButton.setProperty('collapsed', True)
+    self.ultrasoundCollapsibleButton.setProperty('collapsed', False)
+    self.selectView(self.VIEW_ULTRASOUND)
 
 
   def createFeaturePanels(self):
@@ -126,13 +140,113 @@ class UsNeedleGuideGuidelet(Guidelet):
 
     self.calibrationCollapsibleButton = ctk.ctkCollapsibleButton()
     self.patientSetupPanel()
-
+    
     featurePanelList = Guidelet.createFeaturePanels(self)
+
+    self.setupUltrasoundPanel()
+
 
     featurePanelList[len(featurePanelList):] = [self.calibrationCollapsibleButton]
 
     return featurePanelList
 
+  
+  def setupUltrasoundPanel(self):
+  
+    self.ultrasoundPresetsLayout = qt.QGridLayout()
+    self.ultrasoundPresetsLayout.setContentsMargins(10, 10, 10, 10)
+    self.ultrasoundPresetsLayout.setHorizontalSpacing(25)
+    self.ultrasoundPresetsLayout.setVerticalSpacing(25)
+
+    self.depthSlider = slicer.qSlicerUltrasoundDoubleParameterSlider()
+    self.depthSlider.setParameterName('DepthMm')
+    self.depthSlider.setSuffix(' mm')
+    self.depthSlider.setMinimum(90.0)
+    self.depthSlider.setMaximum(240.0)
+    self.depthSlider.setSingleStep(30.0)
+    self.depthSlider.setPageStep(30.0)
+    self.depthSlider.setConnectorNode(self.connectorNode)
+    self.depthSlider.setDeviceID('VideoDevice')
+    self.depthSlider.setToolTip("Adjust depth.")
+
+    self.focusSlider = slicer.qSlicerUltrasoundDoubleParameterSlider()
+    self.focusSlider.setParameterName('FocusDepthPercent')
+    self.focusSlider.setSuffix('%')
+    self.focusSlider.setMinimum(0.0)
+    self.focusSlider.setMaximum(100.0)
+    self.focusSlider.setSingleStep(3)
+    self.focusSlider.setPageStep(10)
+    self.focusSlider.setConnectorNode(self.connectorNode)
+    self.focusSlider.setDeviceID('VideoDevice')
+    self.focusSlider.setToolTip("Adjust focus depth.")
+
+    self.dynamicRangeSlider = slicer.qSlicerUltrasoundDoubleParameterSlider()
+    self.dynamicRangeSlider.setParameterName('DynRangeDb')
+    self.dynamicRangeSlider.setSuffix(' dB')
+    self.dynamicRangeSlider.setMinimum(36.0)
+    self.dynamicRangeSlider.setMaximum(102.0)
+    self.dynamicRangeSlider.setSingleStep(6.0)
+    self.dynamicRangeSlider.setPageStep(6.0)
+    self.dynamicRangeSlider.setConnectorNode(self.connectorNode)
+    self.dynamicRangeSlider.setDeviceID('VideoDevice')
+    self.dynamicRangeSlider.setToolTip("Adjust dynamic range.")
+
+    self.frequencySlider = slicer.qSlicerUltrasoundDoubleParameterSlider()
+    self.frequencySlider.setParameterName('FrequencyMhz')
+    self.frequencySlider.setSuffix(' MHz')
+    self.frequencySlider.setMinimum(2.0)
+    self.frequencySlider.setMaximum(5.0)
+    self.frequencySlider.setSingleStep(0.5)
+    self.frequencySlider.setPageStep(1.0)
+    self.frequencySlider.setConnectorNode(self.connectorNode)
+    self.frequencySlider.setDeviceID('VideoDevice')
+    self.frequencySlider.setToolTip("Adjust frequency.")
+
+    self.gainSlider = slicer.qSlicerUltrasoundDoubleParameterSlider()
+    self.gainSlider.setParameterName('GainPercent')
+    self.gainSlider.setSuffix('%')
+    self.gainSlider.setMinimum(0.0)
+    self.gainSlider.setMaximum(100.0)
+    self.gainSlider.setSingleStep(1.0)
+    self.gainSlider.setPageStep(10.0)
+    self.gainSlider.setConnectorNode(self.connectorNode)
+    self.gainSlider.setDeviceID('VideoDevice')
+    self.gainSlider.setToolTip("Adjust gain.")
+
+    depthLabel = qt.QLabel('Depth:')
+    depthLabel.setObjectName('presets')
+    focusLabel = qt.QLabel('Focus:')
+    focusLabel.setObjectName('presets')
+    dynamicRangeLabel = qt.QLabel('Dynamic Range:')
+    dynamicRangeLabel.setObjectName('presets')
+    frequencyLabel = qt.QLabel('Frequency:')
+    frequencyLabel.setObjectName('presets')
+    gainLabel = qt.QLabel('Gain:')
+    gainLabel.setObjectName('presets')
+    
+    self.ultrasoundPresetsLayout.addWidget(depthLabel, 1, 0, 1, 1)
+    self.ultrasoundPresetsLayout.addWidget(self.depthSlider, 1, 1, 1, 5)
+    self.ultrasoundPresetsLayout.addWidget(focusLabel, 2, 0, 1, 1)
+    self.ultrasoundPresetsLayout.addWidget(self.focusSlider, 2, 1, 1, 5)
+    self.ultrasoundPresetsLayout.addWidget(dynamicRangeLabel, 3, 0, 1, 1)
+    self.ultrasoundPresetsLayout.addWidget(self.dynamicRangeSlider, 3, 1, 1, 5)
+    self.ultrasoundPresetsLayout.addWidget(frequencyLabel, 4, 0, 1, 1)
+    self.ultrasoundPresetsLayout.addWidget(self.frequencySlider, 4, 1, 1, 5)
+    self.ultrasoundPresetsLayout.addWidget(gainLabel, 5, 0, 1, 1)
+    self.ultrasoundPresetsLayout.addWidget(self.gainSlider, 5, 1, 1, 5)
+    
+    self.presetsWidget = qt.QWidget()
+    self.presetsWidget.setContentsMargins(5, 5, 5, 5)
+    self.presetsWidget.setObjectName('presetsWidget')
+    self.presetsWidget.setLayout(self.ultrasoundPresetsLayout)
+  
+    vbox = qt.QVBoxLayout()
+    vbox.setContentsMargins(0, 0, 0, 10)
+    vbox.addWidget(self.presetsWidget)
+    ultrasoundControlsAndZoomFrame = qt.QFrame()
+    ultrasoundControlsAndZoomFrame.setLayout(vbox)
+    ultrasoundControlsAndZoomFrame.setObjectName("sidePanelWidgetFrame")
+    self.ultrasoundLayout.addWidget(ultrasoundControlsAndZoomFrame)
 
   def __del__(self):#common
     self.preCleanup()
@@ -152,72 +266,37 @@ class UsNeedleGuideGuidelet(Guidelet):
 
 
   def setupScene(self): #applet specific
-    logging.debug('setupScene')
-
-    '''
-    ReferenceToRas transform is used in almost all IGT applications. Reference is the coordinate system
-    of a tool fixed to the patient. Tools are tracked relative to Reference, to compensate for patient
-    motion. ReferenceToRas makes sure that everything is displayed in an anatomical coordinate system, i.e.
-    R, A, and S (Right, Anterior, and Superior) directions in Slicer are correct relative to any
-    images or tracked tools displayed.
-    ReferenceToRas is needed for initialization, so we need to set it up before calling Guidelet.setupScene().
-    '''
-
-    self.referenceToRas = slicer.mrmlScene.GetFirstNodeByName('ReferenceToRas')
-    if not self.referenceToRas:
-      self.referenceToRas=slicer.vtkMRMLLinearTransformNode()
-      self.referenceToRas.SetName("ReferenceToRas")
-      m = self.logic.readTransformFromSettings('ReferenceToRas', self.configurationName)
-      if m is None:
-        m = self.logic.createMatrixFromString('1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1')
-      self.referenceToRas.SetMatrixTransformToParent(m)
-      slicer.mrmlScene.AddNode(self.referenceToRas)
-
+    parameterNode = self.logic.getParameterNode()
+    
     Guidelet.setupScene(self)
 
-    # Transforms
+    moduleDir = os.path.dirname(slicer.modules.usneedleguide.path)
 
-    logging.debug('Create transforms')
+    # Load transform
 
-    '''
-    In this example we assume that there is a tracked needle in the system. The needle is not
-    tracked at its tip, so we need a NeedleTipToNeedle transform to define where the needle tip is.
-    In your application Needle may be called Stylus, or maybe you don't need such a tool at all.
-    '''
-
-    self.needleToReference = slicer.mrmlScene.GetFirstNodeByName('NeedleToReference')
-    if not self.needleToReference:
-      self.needleToReference = slicer.vtkMRMLLinearTransformNode()
-      self.needleToReference.SetName('NeedleToReference')
-      slicer.mrmlScene.AddNode(self.needleToReference)
-
-    self.needleTipToNeedle = slicer.mrmlScene.GetFirstNodeByName('NeedleTipToNeedle')
-    if not self.needleTipToNeedle:
-      self.needleTipToNeedle = slicer.vtkMRMLLinearTransformNode()
-      self.needleTipToNeedle.SetName('NeedleTipToNeedle')
-      m = self.logic.readTransformFromSettings('NeedleTipToNeedle', self.configurationName)
-      if m:
-        self.needleTipToNeedle.SetMatrixTransformToParent(m)
-      slicer.mrmlScene.AddNode(self.needleTipToNeedle)
-
-    # Models
-    logging.debug('Create models')
-
-    self.needleModel = slicer.mrmlScene.GetFirstNodeByName('NeedleModel')
-    if not self.needleModel:
-      self.needleModel = slicer.modules.createmodels.logic().CreateNeedle(80, 1.0, 2.5, 0)
-      self.needleModel.SetName('NeedleModel')
-
-    # Build transform tree
-    logging.debug('Set up transform tree')
-
-    self.needleToReference.SetAndObserveTransformNodeID(self.referenceToRas.GetID())
-    self.needleTipToNeedle.SetAndObserveTransformNodeID(self.needleToReference.GetID())
-    self.needleModel.SetAndObserveTransformNodeID(self.needleTipToNeedle.GetID())
+    probeModelToImageFullpath = os.path.join(moduleDir, 'Resources', self.PROBEMODEL_TO_IMAGE_FILENAME)
+    probeModelToImageNode = slicer.mrmlScene.GetFirstNodeByName(self.PROBEMODEL_TO_IMAGE)
+    if probeModelToImageNode is None:
+      probeModelToImageNode = slicer.util.loadTransform(probeModelToImageFullpath)
+      probeModelToImageNode.SetName(self.PROBEMODEL_TO_IMAGE)
+    parameterNode.SetNodeReferenceID(self.PROBEMODEL_TO_IMAGE, probeModelToImageNode.GetID())
+    
+    # Load models
+    
+    modelFileNames = ['Guide06cm', 'Guide08cm', 'Guide10cm']
+    for i in range(len(modelFileNames)):
+      fileName = modelFileNames[i]
+      modelFullpath = os.path.join(moduleDir, 'Resources', fileName + '.vtk')
+      modelNode = slicer.util.loadModel(modelFullpath)
+      displayNode = modelNode.GetDisplayNode()
+      displayNode.SetVisibility(True)
+      displayNode.SetColor(self.GUIDECOLORS[i][0], self.GUIDECOLORS[i][1], self.GUIDECOLORS[i][2])
+      displayNode.SetSliceIntersectionVisibility(True)
+      displayNode.SetSliceIntersectionThickness(2)
+      modelNode.SetAndObserveTransformNodeID(probeModelToImageNode.GetID())
 
     # Hide slice view annotations (patient name, scale, color bar, etc.) as they
     # decrease reslicing performance by 20%-100%
-    logging.debug('Hide slice view annotations')
     import DataProbe
     dataProbeUtil=DataProbe.DataProbeLib.DataProbeUtil()
     dataProbeParameterNode=dataProbeUtil.getParameterNode()
@@ -229,10 +308,7 @@ class UsNeedleGuideGuidelet(Guidelet):
     Guidelet.disconnect(self)
 
     # Remove observer to old parameter node
-    if self.patientSLandmarks_Reference and self.patientSLandmarks_ReferenceObserver:
-      self.patientSLandmarks_Reference.RemoveObserver(self.patientSLandmarks_ReferenceObserver)
-      self.patientSLandmarks_ReferenceObserver = None
-
+    
     self.calibrationCollapsibleButton.disconnect('toggled(bool)', self.onPatientSetupPanelToggled)
     self.exampleButton.disconnect('clicked(bool)', self.onExampleButtonClicked)
 
@@ -242,7 +318,7 @@ class UsNeedleGuideGuidelet(Guidelet):
 
     self.calibrationCollapsibleButton.setProperty('collapsedHeight', 20)
     self.calibrationCollapsibleButton.text = 'Calibration'
-    self.sliceletPanelLayout.addWidget(self.calibrationCollapsibleButton)
+    # self.sliceletPanelLayout.addWidget(self.calibrationCollapsibleButton)
 
     self.calibrationButtonLayout = qt.QFormLayout(self.calibrationCollapsibleButton)
     self.calibrationButtonLayout.setContentsMargins(12, 4, 4, 4)
@@ -263,7 +339,7 @@ class UsNeedleGuideGuidelet(Guidelet):
 
     logging.debug('onPatientSetupPanelToggled: {0}'.format(toggled))
 
-    self.selectView(self.VIEW_ULTRASOUND_3D)
+    self.selectView(self.VIEW_ULTRASOUND)
 
 	
   def onUltrasoundPanelToggled(self, toggled):
@@ -275,7 +351,8 @@ class UsNeedleGuideGuidelet(Guidelet):
 
     logging.debug('onUltrasoundPanelToggled: {0}'.format(toggled))
 
-    self.selectView(self.VIEW_ULTRASOUND_3D)
+    # self.selectView(self.VIEW_ULTRASOUND_3D)
+    self.selectView(self.VIEW_ULTRASOUND)
 
     # The user may want to freeze the image (disconnect) to make contouring easier.
     # Disable automatic ultrasound image auto-fit when the user unfreezes (connect)
