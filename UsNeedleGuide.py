@@ -81,8 +81,7 @@ class UsNeedleGuideLogic(GuideletLogic):
                    'SavedScenesDirectory': defaultSceneSavePath, #overwrites the default setting param of base
                    }
     self.updateSettings(settingList, 'Default')
-
-
+   
 class UsNeedleGuideTest(GuideletTest):
   """This is the test case for your scripted module.
   """
@@ -97,10 +96,10 @@ class UsNeedleGuideTest(GuideletTest):
 class UsNeedleGuideGuidelet(Guidelet):
   
   GUIDECOLORS = np.array([
-    [0.0, 1.0, 0.0],
-    [0.0, 0.7, 0.3],
-    [0.0, 0.3, 0.7],
-    [0,0, 0.0, 1.0]
+    [0.2, 1.0, 0.0],
+    [0.2, 0.8, 0.3],
+    [0.2, 0.6, 0.6],
+    [0.2, 0.4, 1.0]
   ], dtype=object)
 
   PROBEMODEL_TO_IMAGE_FILENAME = "ProbeModelToImage.h5"
@@ -283,17 +282,20 @@ class UsNeedleGuideGuidelet(Guidelet):
     
     # Load models
     
-    modelFileNames = ['Guide06cm', 'Guide08cm', 'Guide10cm']
+    modelFileNames = ['Guide06cm', 'Guide08cm', 'Guide10cm', 'Guide12cm']
     for i in range(len(modelFileNames)):
-      fileName = modelFileNames[i]
-      modelFullpath = os.path.join(moduleDir, 'Resources', fileName + '.vtk')
-      modelNode = slicer.util.loadModel(modelFullpath)
-      displayNode = modelNode.GetDisplayNode()
-      displayNode.SetVisibility(True)
-      displayNode.SetColor(self.GUIDECOLORS[i][0], self.GUIDECOLORS[i][1], self.GUIDECOLORS[i][2])
-      displayNode.SetSliceIntersectionVisibility(True)
-      displayNode.SetSliceIntersectionThickness(2)
-      modelNode.SetAndObserveTransformNodeID(probeModelToImageNode.GetID())
+      modelNode = parameterNode.GetNodeReference(modelFileNames[i])
+      if modelNode is None:
+        fileName = modelFileNames[i]
+        modelFullpath = os.path.join(moduleDir, 'Resources', fileName + '.vtk')
+        modelNode = slicer.util.loadModel(modelFullpath)
+        displayNode = modelNode.GetDisplayNode()
+        displayNode.SetVisibility(True)
+        displayNode.SetColor(self.GUIDECOLORS[i][0], self.GUIDECOLORS[i][1], self.GUIDECOLORS[i][2])
+        displayNode.SetSliceIntersectionVisibility(True)
+        displayNode.SetSliceIntersectionThickness(2)
+        modelNode.SetAndObserveTransformNodeID(probeModelToImageNode.GetID())
+        parameterNode.SetNodeReferenceID(modelFileNames[i], modelNode.GetID())
 
     # Hide slice view annotations (patient name, scale, color bar, etc.) as they
     # decrease reslicing performance by 20%-100%
