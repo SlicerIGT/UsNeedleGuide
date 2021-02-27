@@ -102,6 +102,8 @@ class NeedleGuideWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     self._parameterNode = None
     self._updatingGUIFromParameterNode = False
 
+    self.ultrasoundControlsLayout = None
+
   def setup(self):
     """
     Called when the user opens the module the first time and the widget is initialized.
@@ -121,15 +123,15 @@ class NeedleGuideWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
     # Create logic class. Logic implements all computations that should be possible to run
     # in batch mode, without a graphical user interface.
+
     self.logic = NeedleGuideLogic()
+    self.logic.setupPlusServer()
 
     # Connections
 
     # These connections ensure that we update parameter node when scene is closed
     self.addObserver(slicer.mrmlScene, slicer.mrmlScene.StartCloseEvent, self.onSceneStartClose)
     self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
-
-    self.setupUltrasoundControlWidgets()
 
     # These connections ensure that whenever user changes some settings on the GUI, that is saved in the MRML scene
     # (in the selected parameter node).
@@ -143,7 +145,12 @@ class NeedleGuideWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     # self.ui.applyButton.connect('clicked(bool)', self.onApplyButton)
 
     # Make sure parameter node is initialized (needed for module reload)
+
     self.initializeParameterNode()
+
+    # Set up additional widgets that depend on parameter node
+
+    self.setupUltrasoundControlWidgets()
 
 
   def setupUltrasoundControlWidgets(self):
@@ -151,18 +158,28 @@ class NeedleGuideWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     Creates and puts ultrasound control widgets on the UI
     :returns: None
     """
+    connectorNode = self._parameterNode.GetNodeReference(self.logic.CONNECTOR_NODE)
 
-    self.ultrasoundControlsLayout = qt.QVBoxLayout()
+    # Do not add widgets twice
 
-    self.depthSlicer = slicer.qSlicerUltrasoundDoubleParameterSlider()
+    if self.ultrasoundControlsLayout is not None:
+      return
+
+    self.ultrasoundControlsLayout = qt.QFormLayout()
+
+    self.depthSlider = slicer.qSlicerUltrasoundDoubleParameterSlider(self.ui.ultrasoundCollapsibleButton)
+    self.depthSlider.setParameterName('DepthMm')
     self.depthSlider.setSuffix(' mm')
     self.depthSlider.setMinimum(90.0)
     self.depthSlider.setMaximum(240.0)
     self.depthSlider.setSingleStep(30.0)
     self.depthSlider.setPageStep(30.0)
-    self.depthSlider.setConnectorNode(self.connectorNode)
+    self.depthSlider.setConnectorNode(connectorNode)
     self.depthSlider.setDeviceID('VideoDevice')
-    self.depthSlider.setToolTip("Adjust depth.")
+    self.depthSlider.setToolTip("Adjust ultrasound depth")
+    self.ultrasoundControlsLayout.addRow("Depth (mm)", self.depthSlider)
+
+    self.ui.ultrasoundCollapsibleButton.setLayout(self.ultrasoundControlsLayout)
 
   def cleanup(self):
     """
@@ -177,12 +194,35 @@ class NeedleGuideWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     # Make sure parameter node exists and observed
     self.initializeParameterNode()
 
+    # Start PLUS Connector
+
+    connectorNode = self._parameterNode.GetNodeReference(self.logic.CONNECTOR_NODE)
+    if connectorNode.GetState() != slicer.vtkMRMLIGTLConnectorNode.StateConnected and \
+        connectorNode.GetState() != slicer.vtkMRMLIGTLConnectorNode.StateWaitConnection:
+      connectorNode.Start()
+
+    # Start PLUS Server
+
+    plusServerNode = self._parameterNode.GetNodeReference(self.logic.PLUS_SERVER_NODE)
+    if plusServerNode:
+      plusServerNode.StartServer()
+
   def exit(self):
     """
     Called each time the user opens a different module.
     """
     # Do not react to parameter node changes (GUI wlil be updated when the user enters into the module)
+
     self.removeObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self.updateGUIFromParameterNode)
+
+    '''
+    plusServerNode = self._parameterNode.GetNodeReference(self.logic.PLUS_SERVER_NODE)
+    if plusServerNode:
+      plusServerNode.StopServer()
+
+    connectorNode = self._parameterNode.GetNodeReference(self.logic.CONNECTOR_NODE)
+    connectorNode.Stop()
+    '''
 
   def onSceneStartClose(self, caller, event):
     """
@@ -209,10 +249,10 @@ class NeedleGuideWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     self.setParameterNode(self.logic.getParameterNode())
 
     # Select default input nodes if nothing is selected yet to save a few clicks for the user
-    if not self._parameterNode.GetNodeReference("InputVolume"):
-      firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
-      if firstVolumeNode:
-        self._parameterNode.SetNodeReferenceID("InputVolume", firstVolumeNode.GetID())
+    # if not self._parameterNode.GetNodeReference("InputVolume"):
+    #   firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+    #   if firstVolumeNode:
+    #     self._parameterNode.SetNodeReferenceID("InputVolume", firstVolumeNode.GetID())
 
   def setParameterNode(self, inputParameterNode):
     """
@@ -231,6 +271,8 @@ class NeedleGuideWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     self._parameterNode = inputParameterNode
     if self._parameterNode is not None:
       self.addObserver(self._parameterNode, vtk.vtkCommand.ModifiedEvent, self.updateGUIFromParameterNode)
+
+    self.logic.setupScene()
 
     # Initial GUI update
     self.updateGUIFromParameterNode()
@@ -324,6 +366,11 @@ class NeedleGuideLogic(ScriptedLoadableModuleLogic):
   CONNECTOR_HOSTNAME = "ConnectorHostname"
   CONNECTOR_PORT = "ConnectorPort"
 
+  CONFIG_FILE = os.path.join("Resources", "TelemedConfig.xml")
+  CONFIG_TEXT_NODE = "PlusConfigText"
+  PLUS_SERVER_NODE = "PlusServer"
+  PLUS_SERVER_LAUNCHER_NODE = "PlusServerLauncher"
+
   def __init__(self):
     """
     Called when the logic class is instantiated. Can be used for initializing member variables.
@@ -339,16 +386,60 @@ class NeedleGuideLogic(ScriptedLoadableModuleLogic):
     if not parameterNode.GetParameter(self.CONNECTOR_PORT):
       parameterNode.SetParameter(self.CONNECTOR_PORT, "18944")
 
-  def setupConnectorNode(self):
+  def setupScene(self):
     """
-    Sets up OpenIGTLink connector node for PLUS.
+    Creates necessary data for running the application
     """
     parameterNode = self.getParameterNode()
+
+    self.setupPlusServer()
+
+    # Set up IGTL connector node
 
     connectorNode = parameterNode.GetNodeReference(self.CONNECTOR_NODE)
     if connectorNode is None:
       connectorNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLIGTLConnectorNode", self.CONNECTOR_NODE)
+      parameterNode.SetNodeReferenceID(self.CONNECTOR_NODE, connectorNode.GetID())
 
+  def setupPlusServer(self):
+    """
+    Assuming that PLUS Server Launcher is running, this function starts a PLUS server using the config file in resources.
+    :returns: None
+    """
+    parameterNode = self.getParameterNode()
+
+    moduleDir = os.path.dirname(slicer.modules.needleguide.path)
+    configFileFullPath = os.path.join(moduleDir, self.CONFIG_FILE)
+
+    # Make sure text node is created, and read config data from config file
+
+    configTextNode = parameterNode.GetNodeReference(self.CONFIG_TEXT_NODE)
+    if configTextNode is None:
+      configTextNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTextNode", self.CONFIG_TEXT_NODE)
+      configTextNode.SaveWithSceneOff()
+      configTextNode.SetForceCreateStorageNode(slicer.vtkMRMLTextNode.CreateStorageNodeAlways)
+      parameterNode.SetNodeReferenceID(self.CONFIG_TEXT_NODE, configTextNode.GetID())
+    if not configTextNode.GetStorageNode():
+      configTextNode.AddDefaultStorageNode()
+    configTextStorageNode = configTextNode.GetStorageNode()
+    configTextStorageNode.SaveWithSceneOff()
+    configTextStorageNode.SetFileName(configFileFullPath)
+    configTextStorageNode.ReadData(configTextNode)
+
+    plusServerNode = parameterNode.GetNodeReference(self.PLUS_SERVER_NODE)
+    if not plusServerNode:
+      plusServerNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLPlusServerNode", self.PLUS_SERVER_NODE)
+      plusServerNode.SaveWithSceneOff()
+      parameterNode.SetNodeReferenceID(self.PLUS_SERVER_NODE, plusServerNode.GetID())
+    plusServerNode.SetAndObserveConfigNode(configTextNode)
+
+    plusServerLauncherNode = parameterNode.GetNodeReference(self.PLUS_SERVER_LAUNCHER_NODE)
+    if not plusServerLauncherNode:
+      plusServerLauncherNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLPlusServerLauncherNode", self.PLUS_SERVER_LAUNCHER_NODE)
+      plusServerLauncherNode.SaveWithSceneOff()
+
+    if plusServerLauncherNode.GetNodeReferenceID('plusServerRef') != plusServerNode.GetID():
+      plusServerLauncherNode.AddAndObserveServerNode(plusServerNode)
 
   def process(self, inputVolume, outputVolume, imageThreshold, invert=False, showResult=True):
     """

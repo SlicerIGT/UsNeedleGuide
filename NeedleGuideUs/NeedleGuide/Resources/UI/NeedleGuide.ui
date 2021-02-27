@@ -16,7 +16,6 @@
      <property name="text">
       <string>Ultrasound controls</string>
      </property>
-     <layout class="QVBoxLayout" name="verticalLayout_3"/>
     </widget>
    </item>
    <item>
